@@ -1,0 +1,134 @@
+
+##############################################################
+# Step 1: Login to Azure and set subscription
+##############################################################
+# Check if already logged in
+$loggedIn = az account show --query "name" -o tsv
+
+if ($loggedIn -ne $null) {
+    Write-Host "Already logged in as $loggedIn"
+} else {
+    Write-Host "Logging in..."
+    az login
+}
+
+# Set subscription
+$subscriptionId = (
+    (
+        az account list -o json `
+            --query "[?isDefault]"
+    ) | ConvertFrom-Json
+).id
+az account set --subscription $subscriptionId
+
+
+##############################################################
+# Step 2: Set resource randomizer
+##############################################################
+$random = Get-Random -Minimum 100 -Maximum 999
+
+##############################################################
+# Step 3: Create resource group
+##############################################################
+$resourceGroup = "AzureAI.Vision"
+$location = "eastus"
+
+az group create `
+    --location $location `
+    --resource-group $resourceGroup
+
+##############################################################
+# Step 4: Create Azure AI Vision resource
+##############################################################
+$csVisionName = "vision$random"
+$csVisionSku = "S1"
+
+az cognitiveservices account create `
+    --name $csVisionName `
+    --resource-group $resourceGroup `
+    --location $location `
+    --kind ComputerVision `
+    --sku $csVisionSku `
+    --yes
+
+##############################################################
+# Step 5: Retrieve key and enpoint
+##############################################################
+$csVisionEndpoint = ( `
+    az cognitiveservices account show `
+        --name $csVisionName `
+        --resource-group $resourceGroup `
+        --query properties.endpoint `
+        --output tsv `
+)
+
+$csVisionApiKey = ( `
+    az cognitiveservices account keys list `
+        --name $csVisionName `
+        --resource-group $resourceGroup `
+        --query key1 `
+        --output tsv `
+)
+
+##############################################################
+# Step 6: Create Azure AI Search
+##############################################################
+$csSearchName = "vision$random"
+$csSearchSku = "standard"
+
+az search service create `
+    --name $csSearchName `
+    --resource-group $resourceGroup `
+    --location $location `
+    --sku $csSearchSku
+
+##############################################################
+# Step 7: Retrieve key and define enpoint
+##############################################################
+$csSearchEndpoint = "https://$csSearchName.search.windows.net"
+
+$csSearchApiKey = ( `
+    az search admin-key show `
+        --resource-group $resourceGroup `
+        --service-name $csSearchName `
+        --query primaryKey `
+        --output tsv `
+)
+
+##############################################################
+# Step 8: Create Azure Storage Account
+##############################################################
+$stgName = "vision$random"
+$stgSku = "Standard_LRS"
+
+az storage account create `
+    --name $stgName `
+    --resource-group $resourceGroup `
+    --location $location `
+    --sku $stgSku `
+    --kind StorageV2 `
+    --https-only true `
+    --access-tier Hot
+
+##############################################################
+# Step 9: Retrieve connection string
+##############################################################
+$stgConnectionString = ( `
+    az storage account show-connection-string `
+        --name $stgName `
+        --resource-group $resourceGroup `
+        --query connectionString `
+        --output tsv `
+)
+
+##############################################################
+# Step 10: Store apikeys, endpoints ect. in env file
+##############################################################
+$configurationFile = Join-Path -Path (Get-Location) -ChildPath "/src/conf/configuration.env"
+
+Add-Content -Path $configurationFile -value "AI.VISION.APIKEY = $csVisionApiKey"
+Add-Content -Path $configurationFile -value "AI.VISION.ENDPOINT = $csVisionEndpoint"
+Add-Content -Path $configurationFile -value "AI.STORAGE.CONNECTIONSTRING = $stgConnectionString"
+Add-Content -Path $configurationFile -value "AI.SEARCH.APIKEY = $csSearchApiKey"
+Add-Content -Path $configurationFile -value "AI.SEARCH.ENDPOINT = $csSearchEndpoint"
+
