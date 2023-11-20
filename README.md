@@ -1,4 +1,4 @@
-# AzureAI | AI Vision | Mutimodal LLM
+# AzureAI | AI Vision | Multimodal LLM
 
 ## Introduction
 
